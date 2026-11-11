@@ -46,6 +46,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(windows)]
     fn key_is_the_version_folder() {
         let p = Path::new(r"C:\x\horizon-launcher\run\ABC123\game\horizon-client.exe");
         assert_eq!(version_key(p).as_deref(), Some("abc123"));
