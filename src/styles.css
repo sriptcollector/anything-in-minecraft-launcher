@@ -1,0 +1,1036 @@
+/* The Anything launcher.
+ *
+ * One sheet, written once in the game's own language: square corners, a bitmap
+ * face for anything that labels something, two-pixel borders, buttons that sit
+ * on a block of shadow and press into it. Grass, dirt and stone for the world;
+ * diamond cyan kept for the one thing that is ours, which is what the AI made.
+ *
+ * It replaced a stylesheet for a different, flatter look plus six layers of
+ * overrides on top. They disagreed about sizes and about which rule won, which
+ * is how Settings ended up with buttons stretched across the window and panels
+ * overflowing their own cards. Layout lives here once, in one place.
+ */
+
+/* --- the palette --------------------------------------------------------- */
+
+:root {
+  --grass: #8ce05a;
+  --grass-deep: #4e9a2c;
+  --dirt: #9a6a44;
+  --dirt-deep: #6b472c;
+  --accent: #0f8b7c;
+  --accent-bright: #4fead2;
+  --gold: #f0b429;
+  --bad: #c0392b;
+
+  --bg: #f1f2ec;
+  --surface: #ffffff;
+  --rail: #d5d9c8;
+  --sunken: #e6e8dc;
+  --line: #c3c6b8;
+  --line-strong: #9aa08f;
+  --text: #16180f;
+  --text-dim: #555a4c;
+  --text-faint: #626858;
+  --on-grass: #0f2208;
+  color-scheme: light;
+
+  --font: "Segoe UI Variable Text", "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --display: "Silkscreen", ui-monospace, "Courier New", monospace;
+  --mono: "Cascadia Mono", ui-monospace, "SF Mono", "JetBrains Mono", monospace;
+
+  --rail-w: 64px;
+  --gap: 16px;
+  --z-toast: 40;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15181b;
+    --surface: #1e2429;
+    --rail: #0e1113;
+    --sunken: #171c20;
+    --line: #333c44;
+    --line-strong: #0a0d0f;
+    --text: #f2f5f3;
+    --text-dim: #a2adb3;
+    --text-faint: #8a9298;
+    --accent: #4fead2;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #15181b;
+  --surface: #1e2429;
+  --rail: #0e1113;
+  --sunken: #171c20;
+  --line: #333c44;
+  --line-strong: #0a0d0f;
+  --text: #f2f5f3;
+  --text-dim: #a2adb3;
+  --text-faint: #8a9298;
+  --accent: #4fead2;
+  color-scheme: dark;
+}
+
+@font-face {
+  font-family: "Silkscreen";
+  src: url("./fonts/silkscreen-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Silkscreen";
+  src: url("./fonts/silkscreen-700.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+
+/* --- the frame ----------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border-radius: 0;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  display: grid;
+  grid-template-columns: var(--rail-w) 1fr;
+  overflow: hidden;
+  user-select: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--text);
+  outline-offset: 2px;
+}
+
+img {
+  image-rendering: pixelated;
+}
+
+/* --- type ---------------------------------------------------------------- */
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 400;
+  text-transform: uppercase;
+  line-height: 1.25;
+}
+
+h1 {
+  font-size: 22px;
+}
+
+h2 {
+  font-size: 13px;
+}
+
+h3 {
+  font-size: 12px;
+}
+
+p {
+  margin: 0;
+  max-width: 66ch;
+  text-wrap: pretty;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.dim {
+  color: var(--text-dim);
+}
+
+.faint {
+  color: var(--text-faint);
+}
+
+.label,
+.field-label {
+  display: block;
+  font-family: var(--display);
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.hint {
+  font-size: 14px;
+}
+
+/* --- rail ---------------------------------------------------------------- */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 0 12px;
+  background: var(--rail);
+  border-right: 2px solid var(--line-strong);
+}
+
+.rail-mark {
+  width: 30px;
+  height: 30px;
+  margin-bottom: 14px;
+}
+
+.rail-mark img {
+  display: block;
+  width: 30px;
+  height: 30px;
+}
+
+.rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rail-spacer {
+  flex: 1;
+}
+
+.rail-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 2px solid transparent;
+  background: transparent;
+  /* Full strength: these are the only way around the app. */
+  color: var(--text);
+  cursor: pointer;
+}
+
+.rail-btn:hover {
+  background: var(--sunken);
+  color: var(--text);
+}
+
+.rail-btn[aria-current="page"] {
+  background: var(--grass);
+  border-color: var(--grass-deep);
+  color: var(--on-grass);
+}
+
+.rail-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* A square lamp, not a round badge. */
+.rail-btn .dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  background: var(--bad);
+  box-shadow: 0 0 0 2px var(--rail);
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  background: var(--grass);
+  color: var(--on-grass);
+  font-family: var(--display);
+  font-size: 11px;
+}
+
+.rail-btn[data-tip]:hover::after,
+.rail-btn[data-tip]:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 52px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 5px 9px;
+  border: 2px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--display);
+  font-size: 10px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: var(--z-toast);
+}
+
+/* --- page ---------------------------------------------------------------- */
+
+.page {
+  overflow-y: auto;
+  outline: none;
+}
+
+.page-inner {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 32px 56px;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gap);
+  margin-bottom: 22px;
+}
+
+.page-head p {
+  margin-top: 6px;
+  max-width: 68ch;
+}
+
+.section {
+  margin-top: 30px;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+/* --- buttons ------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  /* Never wider than it needs: a stretched button reads as a broken layout. */
+  width: auto;
+  flex: none;
+  height: 40px;
+  padding: 0 16px;
+  border: 2px solid var(--line);
+  box-shadow: 0 4px 0 var(--line-strong);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--display);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform 70ms steps(2),
+    box-shadow 70ms steps(2);
+}
+
+.btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow: 0 0 0 var(--line-strong);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn-primary,
+.btn-play {
+  background: var(--grass);
+  border-color: var(--grass);
+  box-shadow: 0 4px 0 var(--grass-deep);
+  color: var(--on-grass);
+}
+
+.btn-primary:active:not(:disabled),
+.btn-play:active:not(:disabled) {
+  box-shadow: 0 0 0 var(--grass-deep);
+}
+
+.btn-play {
+  height: 52px;
+  padding: 0 32px;
+  font-size: 14px;
+}
+
+.btn-sm {
+  height: 32px;
+  padding: 0 11px;
+  font-size: 10px;
+  box-shadow: 0 3px 0 var(--line-strong);
+}
+
+.btn-sm:active:not(:disabled) {
+  transform: translateY(3px);
+}
+
+.btn-ghost {
+  border-color: var(--grass);
+}
+
+/* --- pills --------------------------------------------------------------- */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  flex: none;
+  height: 24px;
+  padding: 0 9px;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  font-family: var(--display);
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.pill.on,
+.pill-on {
+  border-color: var(--grass);
+  color: var(--grass-deep);
+}
+
+.pill-new {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+:root[data-theme="dark"] .pill.on,
+:root[data-theme="dark"] .pill-on {
+  color: var(--grass);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .pill.on,
+  :root:not([data-theme="light"]) .pill-on {
+    color: var(--grass);
+  }
+}
+
+/* --- cards --------------------------------------------------------------- */
+
+.instance,
+.steps,
+.settings,
+.composer,
+.result,
+.building,
+.code-box,
+.empty,
+.rows {
+  border: 2px solid var(--line);
+  box-shadow: 0 3px 0 var(--line-strong);
+  background: var(--surface);
+}
+
+/* --- the instance header ------------------------------------------------- */
+
+.instance {
+  display: grid;
+  grid-template-columns: 104px 1fr auto;
+  align-items: center;
+  gap: 22px;
+  padding: 20px;
+}
+
+.tile {
+  width: 104px;
+  aspect-ratio: 1;
+  border: 2px solid var(--line-strong);
+  background-color: var(--dirt);
+  background-image:
+    repeating-linear-gradient(90deg, transparent 0 13px, rgb(0 0 0 / 0.16) 13px 20px),
+    repeating-linear-gradient(0deg, transparent 0 20px, rgb(255 255 255 / 0.1) 20px 27px),
+    linear-gradient(to bottom, var(--grass) 0 26%, var(--grass-deep) 26% 34%, transparent 34%);
+}
+
+.instance-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 8px;
+  color: var(--text-dim);
+}
+
+.instance-play {
+  display: flex;
+}
+
+/* One fact about the world, in the row under its name. */
+.meta-item {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .instance {
+    grid-template-columns: 72px 1fr;
+  }
+  .tile {
+    width: 72px;
+  }
+  .instance-play {
+    grid-column: 1 / -1;
+  }
+  .btn-play {
+    width: 100%;
+  }
+}
+
+/* --- the install steps --------------------------------------------------- */
+
+.steps {
+  margin-top: 16px;
+}
+
+.step {
+  border-top: 2px solid var(--line);
+}
+
+.step:first-child {
+  border-top: 0;
+}
+
+.step.working {
+  background: var(--sunken);
+}
+
+.step-top {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 16px;
+  padding: 18px;
+}
+
+.step-top p {
+  margin-top: 6px;
+  max-width: 62ch;
+}
+
+.step-num {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--line-strong);
+  font-family: var(--display);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.step.done .step-num {
+  border-color: var(--grass);
+  color: var(--grass-deep);
+}
+
+.step-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.step .progress {
+  margin: 0 18px 16px;
+}
+
+@media (max-width: 640px) {
+  .step-top {
+    grid-template-columns: auto 1fr;
+  }
+  .step-action {
+    grid-column: 2;
+  }
+}
+
+/* --- progress ------------------------------------------------------------ */
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 2px solid var(--line);
+  background: var(--sunken);
+  font-size: 13px;
+}
+
+.spinner {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  background: var(--grass);
+  animation: blink 1s steps(2) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.2;
+  }
+}
+
+.meter {
+  flex: 1;
+  min-width: 60px;
+  height: 10px;
+  border: 2px solid var(--line-strong);
+  background: var(--bg);
+}
+
+/* Scaled, not resized: the fill is one solid colour, so growing it by
+   transform keeps the browser out of layout on every progress event. */
+.meter > i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: var(--grass);
+  transform-origin: left center;
+  transition: transform 200ms steps(6);
+}
+
+/* --- rows ---------------------------------------------------------------- */
+
+.rows {
+  display: grid;
+}
+
+.rows .mod {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 16px;
+  border-top: 2px solid var(--line);
+}
+
+.rows .mod:first-child {
+  border-top: 0;
+}
+
+.rows .mod > div {
+  min-width: 0;
+}
+
+/* A row that leads with a name rather than a status lamp. */
+.row-name {
+  gap: 12px;
+}
+
+.row-stat {
+  flex: none;
+  color: var(--text-dim);
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex: none;
+}
+
+/* Whatever a row ends with belongs at its right edge. */
+.rows .mod > :last-child {
+  margin-left: auto;
+}
+
+.rows .mod > .row-actions ~ * {
+  margin-left: 0;
+}
+
+/* Sits in a row of its own in a list, and inline in a line of text on the
+   build page — so it needs to behave on a baseline, not just in a flex row. */
+.status-dot {
+  display: inline-block;
+  vertical-align: baseline;
+  width: 9px;
+  height: 9px;
+  margin-right: 2px;
+  flex: none;
+  background: var(--text-faint);
+}
+
+.status-dot.up {
+  background: var(--grass);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--grass) 30%, transparent);
+}
+
+.empty {
+  padding: 20px 18px;
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+
+.play-target {
+  margin-top: 4px;
+}
+
+/* --- the composer -------------------------------------------------------- */
+
+.composer {
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.input,
+.prompt {
+  width: 100%;
+  padding: 11px 13px;
+  border: 2px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+.input.mono,
+.prompt.mono {
+  font-family: var(--mono);
+}
+
+.input:focus,
+.prompt:focus {
+  border-color: var(--grass);
+}
+
+.prompt {
+  resize: vertical;
+  min-height: 92px;
+  line-height: 1.5;
+}
+
+.effort-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.effort-row .btn {
+  margin-left: auto;
+}
+
+.segmented {
+  display: inline-flex;
+  flex: none;
+  border: 2px solid var(--line);
+  background: var(--bg);
+}
+
+.segmented button {
+  height: 32px;
+  padding: 0 13px;
+  border: 0;
+  border-left: 2px solid var(--line);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--display);
+  font-size: 10px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.segmented button:first-child {
+  border-left: 0;
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--grass);
+  color: var(--on-grass);
+}
+
+/* --- building ------------------------------------------------------------ */
+
+.building {
+  border-color: var(--grass);
+  box-shadow: 0 3px 0 var(--grass-deep);
+  padding: 18px;
+  margin-top: 16px;
+}
+
+.building-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--display);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.building-head .mono {
+  margin-left: auto;
+}
+
+.stages {
+  list-style: none;
+  margin: 14px 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.stages li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--text-faint);
+  font-size: 13.5px;
+}
+
+.stages li.done {
+  color: var(--text-dim);
+}
+
+.stages li.now {
+  color: var(--text);
+}
+
+.stage-mark {
+  width: 14px;
+  flex: none;
+  text-align: center;
+  color: var(--grass);
+}
+
+.stages li.now .stage-mark {
+  animation: blink 1s steps(2) infinite;
+}
+
+/* --- the result ---------------------------------------------------------- */
+
+.result {
+  padding: 18px;
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.result-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.starters {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.starters .btn {
+  width: 100%;
+  height: auto;
+  min-height: 44px;
+  padding: 12px 14px;
+  font-family: var(--font);
+  font-size: 13.5px;
+  text-transform: none;
+  text-align: left;
+  justify-content: flex-start;
+  white-space: normal;
+}
+
+/* --- settings ------------------------------------------------------------ */
+
+.settings {
+  margin-top: 4px;
+}
+
+/*
+ * A setting is a row: what it is on the left, the one control on the right.
+ * The control stays its own width — this is where full-width buttons marched
+ * across the window before.
+ */
+.setting {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 20px;
+  padding: 18px;
+  border-top: 2px solid var(--line);
+}
+
+.setting:first-child {
+  border-top: 0;
+}
+
+.setting-body {
+  min-width: 0;
+}
+
+.setting-body p {
+  margin-top: 6px;
+  max-width: 62ch;
+}
+
+.setting-body .mono {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.setting > .btn,
+.setting > .pill,
+.setting > .segmented {
+  justify-self: end;
+}
+
+.inline-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  max-width: 460px;
+}
+
+.inline-form .input {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 680px) {
+  .setting {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+  .setting > .btn,
+  .setting > .pill,
+  .setting > .segmented {
+    justify-self: start;
+  }
+}
+
+/* --- the Microsoft code -------------------------------------------------- */
+
+.code-box {
+  padding: 18px;
+  margin-bottom: 16px;
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+
+.code {
+  font-family: var(--display);
+  font-size: 26px;
+  letter-spacing: 0.18em;
+  padding: 10px 16px;
+  border: 2px solid var(--grass);
+  background: var(--bg);
+}
+
+/* --- toasts -------------------------------------------------------------- */
+
+.toasts {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  display: grid;
+  gap: 8px;
+  z-index: var(--z-toast);
+  pointer-events: none;
+}
+
+.toast {
+  padding: 11px 14px;
+  border: 2px solid var(--line-strong);
+  box-shadow: 0 3px 0 var(--line-strong);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  max-width: 340px;
+  animation: toast-in 160ms steps(3);
+}
+
+.toast.good {
+  border-color: var(--grass);
+  box-shadow: 0 3px 0 var(--grass-deep);
+}
+
+.toast.bad {
+  border-color: var(--bad);
+  box-shadow: 0 3px 0 var(--bad);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* --- waiting for the first paint ----------------------------------------- */
+
+.skeleton {
+  height: 92px;
+  margin-bottom: 14px;
+  border: 2px solid var(--line);
+  background: var(--sunken);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner,
+  .stages li.now .stage-mark,
+  .toast {
+    animation: none;
+  }
+  .meter > i,
+  .btn {
+    transition: none;
+  }
+}
+
+/* Back on every setup screen after the first. */
+.btn-back {
+  margin-bottom: 14px;
+}
+
+/* The firewall guide: a small picture of the Windows box, arrow on Cancel. */
+.guide { border: 2px solid var(--accent, #2bd9c5); padding: 14px 16px; }
+.mock { margin-top: 10px; max-width: 420px; border: 1px solid #9aa0a6; background: #fff; color: #111; font: 13px "Segoe UI", system-ui, sans-serif; }
+.mock-title { background: #f3f3f3; padding: 6px 10px; border-bottom: 1px solid #ddd; }
+.mock-body { padding: 10px; }
+.mock-buttons { display: flex; gap: 8px; align-items: center; padding: 0 10px 10px; }
+.mock-btn { border: 1px solid #8a8a8a; padding: 3px 12px; background: #fdfdfd; }
+.mock-pick { outline: 3px solid var(--accent, #2bd9c5); outline-offset: 1px; }
+.mock-arrow { font-weight: 600; }

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Anything in Minecraft</title>
+    <script>
+      // Apply the saved theme before the first paint, so there is no flash.
+      try {
+        const theme = localStorage.getItem("theme");
+        if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <nav class="rail" aria-label="Main">
+      <div class="rail-mark" aria-hidden="true" id="mark"></div>
+      <div class="rail-group" id="rail-pages"></div>
+      <div class="rail-spacer"></div>
+      <div class="rail-group" id="rail-foot"></div>
+    </nav>
+    <main class="page" id="page" tabindex="-1"></main>
+    <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,105 @@
+# Builds the Mac launcher: one universal app (Apple Silicon + Intel), a .dmg and
+# an .app.tar.gz for the one-line installer. infra/publish-launcher.mjs --mac
+# then takes the files from this run and puts them on the download page.
+#
+# No Apple Developer ID yet, so the app is ad-hoc signed ("-" in
+# tauri.conf.json). Gatekeeper then offers "Open Anyway" for the .dmg, and the
+# curl installer never trips it because curl does not quarantine what it saves.
+name: launcher-mac
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "**"
+      - ".github/workflows/launcher-mac.yml"
+
+permissions:
+  contents: write
+
+# One at a time: two runs both creating and uploading to the same
+# launcher-mac-latest release race, and the loser dies on
+# "ReleaseAsset.name already exists".
+concurrency:
+  group: launcher-mac
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: pnpm install --frozen-lockfile
+
+      # The engine: fetch Horizon's real macOS release, unpack it, run it.
+      - name: Launcher tests, including the real engine install
+        env:
+          HORIZON_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib -- --include-ignored
+
+      - name: Build the universal app
+        working-directory: .
+        run: pnpm tauri build --target universal-apple-darwin --bundles app,dmg
+
+      - name: Check and package it
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=src-tauri/target/universal-apple-darwin/release/bundle
+          app="$out/macos/Anything.app"
+          bin="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
+          lipo -info "$bin"
+          lipo -info "$bin" | grep -q arm64
+          lipo -info "$bin" | grep -q x86_64
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -E "Signature|Identifier" || true
+          mkdir -p dist-mac
+          cp "$out"/dmg/*.dmg dist-mac/Anything_macos_universal.dmg
+          tar -czf dist-mac/Anything_macos_universal.app.tar.gz -C "$out/macos" Anything.app
+          ls -la dist-mac
+
+      # The same steps the site's one-line installer takes, then open it and
+      # make sure it stays up.
+      - name: Install like the one-liner and open it
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          tar -xzf dist-mac/Anything_macos_universal.app.tar.gz -C "$tmp"
+          rm -rf /Applications/Anything.app
+          /usr/bin/ditto "$tmp/Anything.app" /Applications/Anything.app
+          if xattr -p com.apple.quarantine /Applications/Anything.app 2>/dev/null; then echo "quarantined"; exit 1; fi
+          open /Applications/Anything.app
+          sleep 15
+          pgrep -fl "Anything.app/Contents/MacOS" || { echo "the app did not stay open"; exit 1; }
+          echo "Anything is running."
+          pkill -f "Anything.app/Contents/MacOS" || true
+
+      # A release in this private repo, not an Actions artifact (that storage
+      # quota is shared and full). publish-launcher.mjs --mac takes it from here.
+      - name: Keep the build on the launcher-mac-latest release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag=launcher-mac-latest
+          notes="Mac launcher from run ${GITHUB_RUN_ID} (commit ${GITHUB_SHA::7})."
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --notes "$notes"
+          else
+            gh release create "$tag" --target "$GITHUB_SHA" --prerelease --title "Mac launcher (latest build)" --notes "$notes"
+          fi
+          gh release upload "$tag" dist-mac/* --clobber

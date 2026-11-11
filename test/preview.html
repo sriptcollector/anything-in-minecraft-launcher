@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Launcher preview</title>
+    <!--
+      A look at the real launcher UI without building the app.
+
+      It loads the built bundle with a stubbed Tauri bridge that answers every
+      command with believable data, so the pages render exactly as a player
+      would see them. Open it with `npx vite preview` and visit /test/preview.html,
+      or serve `dist` and point a browser at it.
+    -->
+    <script>
+      const FRIENDS = {
+        friends: [
+          {
+            id: "a:b",
+            accountId: "b",
+            name: "Sam",
+            email: "sam@example.com",
+            mcName: "SamBuilds",
+            status: "accepted",
+            waitingOnThem: false,
+            playingIn: "Chicken Island",
+            worlds: [
+              { id: "w1", name: "Chicken Island", address: "chicken.aim.gg", up: true, players: 3 },
+            ],
+          },
+          {
+            id: "a:c",
+            accountId: "c",
+            name: "Ravi",
+            email: "ravi@example.com",
+            mcName: null,
+            status: "pending",
+            waitingOnThem: false,
+            playingIn: null,
+            worlds: [],
+          },
+          {
+            id: "a:d",
+            accountId: "d",
+            name: "Jo",
+            email: "jo@example.com",
+            mcName: "JoTheBuilder",
+            status: "pending",
+            waitingOnThem: true,
+            playingIn: null,
+            worlds: [],
+          },
+        ],
+        me: { mcName: "Orion", email: "me@example.com" },
+      };
+
+      const ANSWERS = {
+        overview: {
+          site: "https://minecraft.westwardconsulting.ai",
+          paired: true,
+          email: "me@example.com",
+          name: "Orion",
+          plan: "server",
+          prepared: true,
+          game: {
+            binary: "C:\\Users\\me\\Horizon\\horizon-launcher.exe",
+            installed: ["26.3"],
+            selected: "26.3",
+            accounts: [{ name: "Orion", uuid: "1", selected: true }],
+            owner: true,
+          },
+        },
+        servers: [
+          { id: "w1", name: "Chicken Island", address: "chicken.aim.gg", engine: "horizon", kind: "yours", up: true, players: 3, playing: ["SamBuilds", "Orion", "Pip"], mods: 7 },
+          { id: "w2", name: "The Deep", address: "deep.aim.gg", engine: "horizon", kind: "public", up: false, players: 0, playing: [], mods: 2 },
+        ],
+        world_mods: [
+          { id: "m1", name: "Diamond Chicken Storm", summary: "Chickens fall and burst into diamonds", enabled: true, rules: 23 },
+          { id: "m2", name: "Grappling Hook", summary: "Right-click to fire, hold to reel in", enabled: false, rules: 9 },
+        ],
+        // snake_case, the way serde hands it over.
+        friends: {
+          friends: FRIENDS.friends.map((f) => ({
+            id: f.id,
+            account_id: f.accountId,
+            name: f.name,
+            email: f.email,
+            mc_name: f.mcName,
+            status: f.status,
+            waiting_on_them: f.waitingOnThem,
+            playing_in: f.playingIn,
+            worlds: f.worlds,
+          })),
+          me: { mc_name: FRIENDS.me.mcName, email: FRIENDS.me.email },
+        },
+      };
+
+      // ?theme=light|dark picks the look; dark unless asked otherwise.
+      document.documentElement.dataset.theme =
+        new URLSearchParams(location.search).get("theme") ?? "dark";
+
+      // ?state=fresh shows the install steps instead of a ready launcher.
+      if (new URLSearchParams(location.search).get("state") === "fresh") {
+        ANSWERS.overview.prepared = false;
+        ANSWERS.overview.game = {
+          binary: null,
+          installed: [],
+          selected: null,
+          accounts: [],
+          owner: false,
+        };
+      }
+
+      // Fresh setup, played through: the engine takes ?engineMs (default 1500)
+      // to install, Microsoft shows a code and waits until Back cancels it.
+      const LISTENERS = {};
+      let pendingSignIn = null;
+      const emit = (event, payload) => (LISTENERS[event] ?? []).forEach((handler) => handler({ event, payload }));
+
+      window.__TAURI_INTERNALS__ = {
+        invoke: (command, args) => {
+          if (command === "plugin:event|listen") {
+            (LISTENERS[args.event] ??= []).push(args.handler);
+            return Promise.resolve(Object.keys(LISTENERS).length);
+          }
+          // ?state=building leaves a build hanging, to see the waiting screen.
+          if (command === "build_mod" && new URLSearchParams(location.search).get("state") === "building") {
+            return new Promise(() => {});
+          }
+          if (command === "setup_engine") {
+            const ms = Number(new URLSearchParams(location.search).get("engineMs") ?? 1500);
+            emit("setup-progress", ["Downloading Horizon", 10]);
+            return new Promise((done) =>
+              setTimeout(() => {
+                ANSWERS.overview.game.binary = "C:\Users\me\Horizon\horizon-launcher.exe";
+                ANSWERS.overview.game.installed = ["26.3"];
+                done(null);
+              }, ms),
+            );
+          }
+          if (command === "microsoft_sign_in") {
+            setTimeout(() => emit("ms-code", { url: "https://microsoft.com/link", code: "AB12CD34" }), 200);
+            return new Promise((_, fail) => (pendingSignIn = fail));
+          }
+          if (command === "cancel_sign_in") {
+            pendingSignIn?.("cancelled");
+            pendingSignIn = null;
+            return Promise.resolve(null);
+          }
+          return Promise.resolve(ANSWERS[command] ?? null);
+        },
+        transformCallback: (callback) => callback,
+        unregisterCallback: () => {},
+        challenge: null,
+      };
+    </script>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <nav class="rail" aria-label="Main">
+      <div class="rail-mark" aria-hidden="true" id="mark"></div>
+      <div class="rail-group" id="rail-pages"></div>
+      <div class="rail-spacer"></div>
+      <div class="rail-group" id="rail-foot"></div>
+    </nav>
+    <main class="page" id="page" tabindex="-1"></main>
+    <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

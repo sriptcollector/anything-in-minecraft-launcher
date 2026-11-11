@@ -1,0 +1,48 @@
+# The customer gate on a fresh Windows machine: the live site, the download,
+# the installer's own pages, and the launcher's first run, with a screenshot
+# of every step. The screenshots go on the repo's gate-windows-latest prerelease
+# (artifact storage is full). Run it by hand after a release.
+name: gate-windows
+on:
+  workflow_dispatch:
+    inputs:
+      site:
+        description: Site to test
+        default: https://minecraft.westwardconsulting.ai
+      mode:
+        description: "full: download, installer pages, first launch. join: the one-tap Join world link."
+        type: choice
+        options: [full, join]
+        default: full
+
+permissions:
+  contents: write
+
+jobs:
+  gate:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      GATE_OUT: ${{ github.workspace }}\gate-out
+      GATE_SITE: ${{ inputs.site }}
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Playwright, driving the Edge and WebView2 already on the machine
+        working-directory: .github/gate
+        run: npm init -y > $null; npm i playwright@1 --no-audit --no-fund
+      - name: Walk it like a new player
+        shell: pwsh
+        run: if ("${{ inputs.mode }}" -eq "join") { ./.github/gate/join-gate.ps1 } else { ./.github/gate/windows-gate.ps1 }
+      - name: Screenshots onto the gate-windows-latest prerelease
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete gate-windows-latest --yes --cleanup-tag 2>$null
+          Compress-Archive -Path gate-out/* -DestinationPath gate-windows.zip
+          gh release create gate-windows-latest gate-windows.zip --prerelease --title "Windows gate, run ${{ github.run_id }}" --notes "Screenshots of every step on a fresh Windows runner."
