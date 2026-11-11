@@ -1,0 +1,87 @@
+# The first run a new player has, recorded on video, on a machine that has
+# never seen Anything: the live site, the download, the install, the first
+# screens. Permissions for the app are reset first, so any prompt the runner
+# image would have pre-granted shows as it would at home. Stops where a real
+# Microsoft account is needed. Videos go on the first-run-videos prerelease.
+name: first-run-video
+on:
+  workflow_dispatch:
+    inputs:
+      site:
+        description: Site to test
+        default: https://minecraft.westwardconsulting.ai
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      GATE_OUT: ${{ github.workspace }}\gate-out
+      GATE_SITE: ${{ inputs.site }}
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Playwright, driving the Edge already on the machine
+        working-directory: .github/gate
+        run: npm init -y > $null; npm i playwright@1 --no-audit --no-fund
+      - name: ffmpeg
+        run: choco install ffmpeg -y --no-progress
+      - name: Record the first run
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force gate-out | Out-Null
+          $rec = Start-Process ffmpeg -ArgumentList "-y -f gdigrab -framerate 10 -i desktop -vf scale=1280:-2 -c:v libx264 -preset ultrafast -pix_fmt yuv420p gate-out\windows-first-run.mkv" -PassThru -WindowStyle Hidden
+          Start-Sleep 3
+          try { ./.github/gate/windows-gate.ps1 } catch { "gate stopped: $_" | Tee-Object gate-out\log.txt -Append }
+          Start-Sleep 5
+          Stop-Process -Id $rec.Id
+          Start-Sleep 3
+          ffmpeg -y -i gate-out\windows-first-run.mkv -c copy gate-out\windows-first-run.mp4
+      - name: Upload
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view first-run-videos >/dev/null 2>&1 || gh release create first-run-videos --prerelease --title "First-run videos" --notes "Default-state first runs, recorded on fresh runners."
+          cd gate-out && 7z a ../windows-first-run-shots.zip *.png log.txt >/dev/null; cd ..
+          gh release upload first-run-videos gate-out/windows-first-run.mp4 windows-first-run-shots.zip --clobber
+
+  mac:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reset to a default state
+        run: |
+          tccutil reset All ai.westwardconsulting.anything || true
+          rm -rf /Applications/Anything.app "$HOME/Library/Application Support/ai.westwardconsulting.anything"
+      - name: Record the first run, as a player does it
+        env:
+          SITE: ${{ inputs.site }}
+        run: |
+          mkdir -p out
+          screencapture -v -V 240 -k out/mac-first-run.mov &
+          rec=$!
+          sleep 3
+          # The page's own Mac path: the line it tells you to paste in Terminal.
+          open -a Terminal "$SITE/download" || true
+          sleep 5
+          curl -fsSL "$SITE/install.sh" | bash 2>&1 | tee out/install.log
+          for i in 1 2 3 4 5 6; do sleep 10; screencapture -x "out/mac-$i.png"; done
+          pgrep -fl "Anything.app/Contents/MacOS" | tee -a out/install.log || echo "launcher not running" | tee -a out/install.log
+          wait $rec || true
+      - name: Upload
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view first-run-videos >/dev/null 2>&1 || gh release create first-run-videos --prerelease --title "First-run videos" --notes "Default-state first runs, recorded on fresh runners."
+          (cd out && zip -q ../mac-first-run-shots.zip *.png install.log)
+          gh release upload first-run-videos out/mac-first-run.mov mac-first-run-shots.zip --clobber

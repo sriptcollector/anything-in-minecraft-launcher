@@ -1,0 +1,57 @@
+# Builds the Windows installer (NSIS, per-user, so no admin prompt) and keeps
+# it on the launcher-windows-latest release, where the site's publish step
+# takes it from.
+name: launcher-windows
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "src-tauri/**"
+      - "package.json"
+      - ".github/workflows/launcher-windows.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: launcher-windows
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: pnpm install --frozen-lockfile
+      - name: Launcher tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+      - name: Build the installer
+        run: pnpm tauri build --bundles nsis
+      - name: Keep it on the launcher-windows-latest release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag=launcher-windows-latest
+          file=$(ls src-tauri/target/release/bundle/nsis/*-setup.exe | head -1)
+          cp "$file" Anything_windows_x64-setup.exe
+          notes="Windows launcher from run ${GITHUB_RUN_ID} (commit ${GITHUB_SHA::7})."
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --notes "$notes"
+          else
+            gh release create "$tag" --target "$GITHUB_SHA" --prerelease --title "Windows launcher (latest build)" --notes "$notes"
+          fi
+          gh release upload "$tag" Anything_windows_x64-setup.exe --clobber
